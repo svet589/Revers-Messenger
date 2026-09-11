@@ -1,82 +1,116 @@
-name: Build APK
-on: 
+name: Build Android APK
+
+on:
   workflow_dispatch:
+
   push:
-    branches: [ rewrite, main, master ]
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
 
 jobs:
   build:
+    name: Build APK
     runs-on: ubuntu-latest
-    env:
-      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
-      CCACHE_NOHASHDIR: "true"
-      CCACHE_MAXSIZE: "10G"
-      CCACHE_HARDLINK: "true"
+
     steps:
-      - name: Checkout repository with submodules
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 1
+          fetch-depth: 0
 
-      - name: Write API_KEYS
-        uses: DamianReeves/write-file-action@master
-        with:
-          path: ./API_KEYS
-          contents: |
-            APP_ID = 6
-            APP_HASH = "eb06d4abfb49dc3eeb1aeb98ae0f581e"
-            MAPS_V2_API = 0
-          write-mode: overwrite
-
-      - name: Setup Java 17
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
-          cache: 'gradle'
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
 
-      - name: Cache Gradle Build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches/build-cache-*
-            ~/.gradle/buildOutputCleanup/cache.properties
-          key: gradle-builds-${{ github.sha }}
-          restore-keys: |
-            gradle-builds
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
 
-      - name: Set up ccache
-        uses: hendrikmuhs/ccache-action@v1.2
-        with:
-          key: ccache
-          restore-keys: ccache
+      - name: Show Gradle projects
+        run: ./gradlew projects --no-daemon
 
-      - name: Setup Android SDK Tools
-        uses: android-actions/setup-android@v3
-
-      - name: Prepare Environment and Free Space
+      - name: Detect Gradle build task
+        id: detect_task
+        shell: bash
         run: |
-          echo "Removing large packages to free space"
-          sudo apt-get update
-          sudo apt-get remove -y '^llvm-.*' 'php.*' '^mongodb-.*' '^mysql-.*' azure-cli firefox mono-devel libgl1-mesa-dri || true
-          sudo apt-get autoremove -y
-          sudo apt-get clean
+          set -e
 
-          echo "Removing large directories"
-          sudo rm -rf /usr/share/dotnet/ /usr/local/graalvm/ /usr/local/.ghcup/ /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
-          df -h
+          echo "Available Gradle tasks:"
+          ./gradlew tasks --all --no-daemon | tee gradle-tasks.log
 
-          sudo apt-get install bison gcc make curl ninja-build ccache -y
+          CANDIDATES=(
+            ":TMessagesProj:assembleAfatDebug"
+            ":app:assembleAfatDebug"
+            "assembleAfatDebug"
+            ":TMessagesProj:assembleDebug"
+            ":app:assembleDebug"
+            "assembleDebug"
+          )
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+          SELECTED_TASK=""
 
-      - name: Build with Gradle (Debug)
-        run: ./gradlew assembleAfatDebug --no-daemon --stacktrace
+          for TASK in "${CANDIDATES[@]}"; do
+            echo "Checking task: $TASK"
 
-      - name: Upload Debug APK
+            if ./gradlew "$TASK" --dry-run --no-daemon >/dev/null 2>&1; then
+              SELECTED_TASK="$TASK"
+              break
+            fi
+          done
+
+          if [ -z "$SELECTED_TASK" ]; then
+            echo "ERROR: No suitable Debug build task was found."
+            echo
+            echo "Tasks containing assemble/debug/release:"
+            grep -i -E "assemble|debug|release|afat" gradle-tasks.log || true
+            exit 1
+          fi
+
+          echo "Selected Gradle task: $SELECTED_TASK"
+          echo "task=$SELECTED_TASK" >> "$GITHUB_OUTPUT"
+
+      - name: Build APK
+        run: |
+          ./gradlew "${{ steps.detect_task.outputs.task }}" \
+            --no-daemon \
+            --stacktrace \
+            --build-cache
+
+      - name: Find generated APK files
+        shell: bash
+        run: |
+          echo "Generated APK files:"
+          find . -type f -name "*.apk" -print
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Revers-Messenger-Debug-APK
-          path: TMessagesProj/build/outputs/apk/afat/debug/*.apk
+          name: revers-messenger-apk
+          path: |
+            **/build/outputs/apk/**/*.apk
+            **/build/outputs/apk/*.apk
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          APK_FILES=$(find . -type f -name "*.apk")
+
+          if [ -z "$APK_FILES" ]; then
+            echo "ERROR: APK file was not found."
+            exit 1
+          fi
+
+          gh release create "${GITHUB_REF_NAME}" \
+            $APK_FILES \
+            --title "Revers Messenger ${GITHUB_REF_NAME}" \
+            --generate-notes
