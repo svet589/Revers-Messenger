@@ -2,7 +2,6 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
-
   push:
     tags:
       - "v*"
@@ -31,6 +30,15 @@ jobs:
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
+
+      - name: Create API_KEYS file
+        run: |
+          cat << 'EOF' > ./API_KEYS
+          APP_ID = 6
+          APP_HASH = "eb06d4abfb49dc3eeb1aeb98ae0f581e"
+          MAPS_V2_API = 0
+          EOF
+          cp ./API_KEYS ./TMessagesProj/API_KEYS || true
 
       - name: Show Gradle projects
         run: ./gradlew projects --no-daemon
@@ -96,21 +104,3 @@ jobs:
             **/build/outputs/apk/**/*.apk
             **/build/outputs/apk/*.apk
           if-no-files-found: error
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          APK_FILES=$(find . -type f -name "*.apk")
-
-          if [ -z "$APK_FILES" ]; then
-            echo "ERROR: APK file was not found."
-            exit 1
-          fi
-
-          gh release create "${GITHUB_REF_NAME}" \
-            $APK_FILES \
-            --title "Revers Messenger ${GITHUB_REF_NAME}" \
-            --generate-notes
