@@ -21,7 +21,7 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Set up JDK
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -38,7 +38,41 @@ jobs:
           APP_HASH = "eb06d4abfb49dc3eeb1aeb98ae0f581e"
           MAPS_V2_API = 0
           EOF
+          # Копируем во все возможные места для разных форков
           cp ./API_KEYS ./TMessagesProj/API_KEYS || true
+          cp ./API_KEYS ./TMessagesProj/src/main/API_KEYS || true
+
+      - name: Create dummy google-services.json
+        run: |
+          cat << 'EOF' > ./google-services-dummy.json
+          {
+            "project_info": {
+              "project_number": "123456789012",
+              "project_id": "revers-messenger",
+              "storage_bucket": "revers-messenger.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef",
+                  "android_client_info": {
+                    "package_name": "org.telegram.messenger.beta"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [ { "current_key": "fake_key" } ],
+                "services": { "analytics_service": { "status": 1 } }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+          # Раскладываем по путям, которые требовал Gradle в логах
+          mkdir -p TMessagesProj/src/beta
+          mkdir -p TMessagesProj/src/debug
+          cp ./google-services-dummy.json ./TMessagesProj/google-services.json
+          cp ./google-services-dummy.json ./TMessagesProj/src/beta/google-services.json
+          cp ./google-services-dummy.json ./TMessagesProj/src/debug/google-services.json
 
       - name: Show Gradle projects
         run: ./gradlew projects --no-daemon
@@ -48,9 +82,7 @@ jobs:
         shell: bash
         run: |
           set -e
-
-          echo "Available Gradle tasks:"
-          ./gradlew tasks --all --no-daemon | tee gradle-tasks.log
+          ./gradlew tasks --all --no-daemon > gradle-tasks.log
 
           CANDIDATES=(
             ":TMessagesProj:assembleAfatDebug"
@@ -62,10 +94,8 @@ jobs:
           )
 
           SELECTED_TASK=""
-
           for TASK in "${CANDIDATES[@]}"; do
             echo "Checking task: $TASK"
-
             if ./gradlew "$TASK" --dry-run --no-daemon >/dev/null 2>&1; then
               SELECTED_TASK="$TASK"
               break
@@ -73,14 +103,11 @@ jobs:
           done
 
           if [ -z "$SELECTED_TASK" ]; then
-            echo "ERROR: No suitable Debug build task was found."
-            echo
-            echo "Tasks containing assemble/debug/release:"
-            grep -i -E "assemble|debug|release|afat" gradle-tasks.log || true
+            echo "ERROR: No suitable build task found."
             exit 1
           fi
 
-          echo "Selected Gradle task: $SELECTED_TASK"
+          echo "Selected: $SELECTED_TASK"
           echo "task=$SELECTED_TASK" >> "$GITHUB_OUTPUT"
 
       - name: Build APK
@@ -93,7 +120,6 @@ jobs:
       - name: Find generated APK files
         shell: bash
         run: |
-          echo "Generated APK files:"
           find . -type f -name "*.apk" -print
 
       - name: Upload APK artifact
@@ -102,5 +128,12 @@ jobs:
           name: revers-messenger-apk
           path: |
             **/build/outputs/apk/**/*.apk
-            **/build/outputs/apk/*.apk
           if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK_FILES=$(find . -type f -name "*.apk")
+          gh release create "${GITHUB_REF_NAME}" $APK_FILES --title "Release ${GITHUB_REF_NAME}" --generate-notes
