@@ -44,6 +44,12 @@ jobs:
 
       - name: Create dummy google-services.json
         run: |
+
+      - name: Show Gradle projects
+        run: ./gradlew projects --no-daemon
+
+      - name: Create dummy google-services.json
+        run: |
           cat << 'EOF' > ./google-services-dummy.json
           {
             "project_info": {
@@ -56,6 +62,39 @@ jobs:
                 "client_info": {
                   "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef",
                   "android_client_info": {
+                    "package_name": "com.radolyn.ayugram"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [ { "current_key": "fake_key" } ],
+                "services": { "analytics_service": { "status": 1 } }
+              },
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789012:android:0123456789abcdeg",
+                  "android_client_info": {
+                    "package_name": "com.radolyn.ayugram.beta"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [ { "current_key": "fake_key" } ],
+                "services": { "analytics_service": { "status": 1 } }
+              },
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789012:android:0123456789abcdeh",
+                  "android_client_info": {
+                    "package_name": "org.telegram.messenger"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [ { "current_key": "fake_key" } ],
+                "services": { "analytics_service": { "status": 1 } }
+              },
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789012:android:0123456789abcdei",
+                  "android_client_info": {
                     "package_name": "org.telegram.messenger.beta"
                   }
                 },
@@ -67,16 +106,12 @@ jobs:
             "configuration_version": "1"
           }
           EOF
-          # Раскладываем по путям, которые требовал Gradle в логах
           mkdir -p TMessagesProj/src/beta
           mkdir -p TMessagesProj/src/debug
           cp ./google-services-dummy.json ./TMessagesProj/google-services.json
           cp ./google-services-dummy.json ./TMessagesProj/src/beta/google-services.json
           cp ./google-services-dummy.json ./TMessagesProj/src/debug/google-services.json
-
-      - name: Show Gradle projects
-        run: ./gradlew projects --no-daemon
-
+          
       - name: Detect Gradle build task
         id: detect_task
         shell: bash
