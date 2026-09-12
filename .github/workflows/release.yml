@@ -31,14 +31,33 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
-      - name: Create API_KEYS file
+      - name: Generate debug keystore and setup signing keys
         run: |
+          mkdir -p ./TMessagesProj/config
+
+          # Генерируем тестовый keystore прямо на раннере
+          keytool -genkey -v -keystore ./TMessagesProj/config/extera.jks \
+            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+          # Дублируем его под стандартным именем debug.keystore
+          cp ./TMessagesProj/config/extera.jks ./TMessagesProj/config/debug.keystore || true
+
+          # Заполняем API_KEYS всеми свойствами, которые проверяет сборщик
           cat << 'EOF' > ./API_KEYS
           APP_ID = 6
           APP_HASH = "eb06d4abfb49dc3eeb1aeb98ae0f581e"
           MAPS_V2_API = 0
+
+          SIGNING_KEY_PASSWORD = "android"
+          SIGNING_KEY_ALIAS = "androiddebugkey"
+          SIGNING_KEY_STORE_PASSWORD = "android"
+          KEYSTORE_PASS = "android"
+          ALIAS_NAME = "androiddebugkey"
+          ALIAS_PASS = "android"
           EOF
-          # Копируем во все возможные места для разных форков
+
           cp ./API_KEYS ./TMessagesProj/API_KEYS || true
           cp ./API_KEYS ./TMessagesProj/src/main/API_KEYS || true
 
