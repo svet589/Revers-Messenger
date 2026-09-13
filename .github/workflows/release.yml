@@ -40,20 +40,19 @@ jobs:
         run: |
           mkdir -p ./TMessagesProj/config
 
-          # Удаляем старый файл, если он есть в репозитории
+          # Принудительно удаляем старый ключ
           rm -f ./TMessagesProj/config/extera.jks ./TMessagesProj/config/debug.keystore
 
-          # Генерируем новый чистый отладочный keystore
+          # Генерируем тестовый keystore с паролем android
           keytool -genkey -v -keystore ./TMessagesProj/config/extera.jks \
             -storetype PKCS12 \
             -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass android -keypass android \
             -dname "CN=Android Debug,O=Android,C=US"
 
-          # Дублируем его
           cp ./TMessagesProj/config/extera.jks ./TMessagesProj/config/debug.keystore || true
 
-          # Заполняем API_KEYS
+          # Прописываем все возможные варианты названий переменных подписи
           cat << 'EOF' > ./API_KEYS
           APP_ID = 6
           APP_HASH = "eb06d4abfb49dc3eeb1aeb98ae0f581e"
@@ -62,13 +61,34 @@ jobs:
           SIGNING_KEY_PASSWORD = "android"
           SIGNING_KEY_ALIAS = "androiddebugkey"
           SIGNING_KEY_STORE_PASSWORD = "android"
+
           KEYSTORE_PASS = "android"
+          KEYSTORE_PASSWORD = "android"
+          KEY_PASS = "android"
+          KEY_PASSWORD = "android"
           ALIAS_NAME = "androiddebugkey"
           ALIAS_PASS = "android"
+
+          RELEASE_KEY_PASSWORD = "android"
+          RELEASE_KEY_ALIAS = "androiddebugkey"
+          RELEASE_STORE_PASSWORD = "android"
+
+          APP_SIGNING_KEY_PASSWORD = "android"
+          APP_SIGNING_KEY_ALIAS = "androiddebugkey"
+          APP_SIGNING_KEY_STORE_PASSWORD = "android"
           EOF
 
+          # Дублируем во все целевые папки
           cp ./API_KEYS ./TMessagesProj/API_KEYS || true
           cp ./API_KEYS ./TMessagesProj/src/main/API_KEYS || true
+          cp ./API_KEYS ./TMessagesProj/config/API_KEYS || true
+
+          # Также передаём их в gradle.properties на случай, если проект читает их оттуда
+          echo "SIGNING_KEY_PASSWORD=android" >> gradle.properties
+          echo "SIGNING_KEY_ALIAS=androiddebugkey" >> gradle.properties
+          echo "SIGNING_KEY_STORE_PASSWORD=android" >> gradle.properties
+          echo "KEYSTORE_PASS=android" >> gradle.properties
+          echo "ALIAS_NAME=androiddebugkey" >> gradle.properties
       - name: Show Gradle projects
         run: ./gradlew projects --no-daemon
 
